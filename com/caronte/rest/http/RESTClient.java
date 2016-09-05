@@ -15,21 +15,28 @@ import com.caronte.json.JSONObject;
 import com.caronte.rest.enums.CharsetType;
 import com.caronte.rest.enums.ContentType;
 import com.caronte.rest.enums.MethodType;
+import com.caronte.rest.exceptions.AuthorizationException;
 import com.caronte.rest.exceptions.OperationExecutionException;
 
 public class RESTClient 
 {
-	public static Object execute(String uri, MethodType method, ContentType contentType, CharsetType charsetType, Object content, HashMap<String, String> headers, ContentType produces) throws OperationExecutionException
+	public static Object execute(String uri, MethodType method, ContentType contentType, CharsetType charsetType, Object content, HashMap<String, String> headers, ContentType produces) throws OperationExecutionException, AuthorizationException
 	{
 		HttpURLConnection connection = null;
 		String mensaje = null;
+		StringBuffer buffer = new StringBuffer();		    
+		int responseCode;
+		JSONObject data = null;
 		
 		try
 		{
 			URL url = new URL(uri);
 		    connection = (HttpURLConnection)url.openConnection();
 		    connection.setRequestMethod(method.toString());
-		    connection.setRequestProperty("Content-Type", contentType.toString() + (charsetType.toString() == null ? "" : ";" + charsetType.toString()));
+		    
+		    String strContentType = contentType.toString() + (charsetType.toString() == null ? "" : ";charset=" + charsetType.toString());
+		    
+		    connection.setRequestProperty("Content-Type", strContentType);
 		    connection.setRequestProperty("Accept-Charset", charsetType.toString());
 		    connection.setUseCaches(false);
 		    connection.setDoOutput(true);
@@ -52,11 +59,10 @@ public class RESTClient
 			    wr.close();
 		    }
 		    
-		    int responseCode = connection.getResponseCode();
+		    responseCode = connection.getResponseCode();
 		    
 		    if(responseCode == 200 || responseCode == 401 || responseCode == 409)
 		    {
-	    		StringBuffer buffer = new StringBuffer();		    
 	    		BufferedReader reader;
 
 	    		if (responseCode == 200)
@@ -74,57 +80,44 @@ public class RESTClient
 	    		{
 	    			buffer.append(linea);
 	    		}
-	    		
-	    		if (produces == ContentType.APPLICATION_JSON)
-	    		{
-		    		return JSON.parse(buffer.toString());
-	    		}
-	    		
-	    		return buffer.toString();	    		
 		    }
+		    
+			if (produces == ContentType.APPLICATION_JSON)
+			{
+	    		data = JSON.parse(buffer.toString());
+			}
 		}
 		catch(Exception e)
 		{
-			mensaje = e.getMessage();
+			throw new OperationExecutionException("Error en servicio " + uri + (mensaje != null ? " : " +  mensaje : ""));
 		}
-
-		throw new OperationExecutionException("Error en servicio " + uri + (mensaje != null ? " : " +  mensaje : ""));
-	}
-	
-	public static void main(String[] args) 
-	{
-		String uri;
-		uri = "http://localhost:9090/mn-acl/client";
-
-		HashMap<String, String> headers = new HashMap<String, String>();
+		    
 		
-		JSONObject jsonObject = new JSONObject();
-		String json = "";
-		
-		json += "{\n";
-		json += "\t\"p_clave_cliente\" : \"kio2\",\n";
-		json += "\t\"p_contexto\" : \"kio2\",\n";
-		json += "\t\"p_nombre_cliente\" : \"Fundacón KIO A.C.\",\n";
-		json += "\t\"p_clave_usuario\" : \"RCONCHAMN\",\n";
-		json += "\t\"p_password\" : \"RCONCHAMN\",\n";
-		json += "\t\"p_nombre_usuario\" : \"Roberto\",\n";
-		json += "\t\"p_apellidos\" : \"Concha Gallegos\",\n";
-		json += "\t\"p_correo_electronico\" : \"roberto.concha@masnegocio.com\"\n";
-		json += "}\n";
-		
-		headers.put("ProductoMN","EXPENSESCLOUD");
-		
-		try
+		if (produces == ContentType.APPLICATION_JSON)
 		{
-			jsonObject = JSON.parse(json);
-			Object res = RESTClient.execute(uri, MethodType.POST, ContentType.APPLICATION_JSON, CharsetType.UTF_8, jsonObject, headers, ContentType.APPLICATION_JSON);
-			System.out.println(res);
+			if (responseCode == 401)
+			{
+				throw new AuthorizationException("Error en servicio " + uri, data);
+			}
+			if (responseCode == 409)
+			{
+				throw new OperationExecutionException("Error en servicio " + uri, data);
+			}
+
+			return data;
 		}
-		catch(Exception e)
+		else
 		{
-			e.printStackTrace();
+			if (responseCode == 401)
+			{
+				throw new AuthorizationException("Error en servicio " + uri, buffer.toString());
+			}
+			if (responseCode == 409)
+			{
+				throw new OperationExecutionException("Error en servicio " + uri, buffer.toString());
+			}
+			
+			return buffer.toString();
 		}
-		
 	}
-	
 }
